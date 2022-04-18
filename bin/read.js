@@ -7,7 +7,7 @@ const { DEVICES } = require('../dist/constants')
 
 const _parseArguments = () => {
   const parser = new ArgumentParser({
-    description: 'Reads a local flow meter and prints to the console.',
+    description: 'Streams the amount of fluid that has passed through a flow meter and prints it to the console.',
   })
   parser.add_argument('gpioPin', {
     help: 'The pin number to use. Example: GPIO4 = 7.',
@@ -20,6 +20,10 @@ const _parseArguments = () => {
     default: 'YF_S403',
   })
   return parser.parse_args()
+}
+
+const readRateInGpm = (value) => {
+  return value * 60 * 0.2642
 }
 
 const main = async () => {
@@ -36,7 +40,8 @@ const main = async () => {
 
   const onFlowReading = (value) => {
     if (value > 0) {
-      console.info(`${value} liters`)
+      const gpm = readRateInGpm(value)
+      console.info(`${Number(value).toFixed(3)} liters @ ${Number(gpm).toFixed(2)} gpm`)
     }
   }
 
