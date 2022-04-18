@@ -1,6 +1,6 @@
 {
   "name": "rpi-flow",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Raspberry Pi water flow app/lib.",
   "main": "index.js",
   "types": "index.d.ts",

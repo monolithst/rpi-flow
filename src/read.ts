@@ -31,17 +31,10 @@ type ReadContinuousFlow = ReadFlow & {
 }
 
 
-const calculateGpm = ({count, pulseFrequency}:CalculateGpm) => {
-  const litersPerMinute = count / pulseFrequency
-  return litersToGallonsPerMinute(litersPerMinute)
-}
-
 const delay = (ms: number) => {
   return new Promise(r => setTimeout(r, ms))
 }
   
-const litersToGallonsPerMinute = (value: number) => value * 0.2642
-
 const readContinuous = async ({cancelToken, pulseFrequency, controller, onFlowReading, cycleFrequencyInMs=1000}:ReadContinuousFlow) => {
   while(cancelToken.keepGoing()) {
     const gpm = await readOne({cancelToken, pulseFrequency, controller, cycleFrequencyInMs})
@@ -53,9 +46,11 @@ const readOne = async ({cancelToken, pulseFrequency, controller, cycleFrequencyI
   controller.startCounter()
   await delay(cycleFrequencyInMs)
   controller.stopCounter()
-  const gpm = calculateGpm({count: controller.getCount(), pulseFrequency})
+  const count = controller.getCount()
+  const litersPerMinute = count / pulseFrequency
+  const liters = litersPerMinute / 60
   controller.resetCount()
-  return gpm
+  return liters 
 }
 
 const setup = ({

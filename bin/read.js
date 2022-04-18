@@ -35,7 +35,9 @@ const main = async () => {
   }
 
   const onFlowReading = (value) => {
-    console.info(`${value} gpm`)
+    if (value > 0) {
+      console.info(`${value} liters`)
+    }
   }
 
   const controller = setup({ gpioPin })
