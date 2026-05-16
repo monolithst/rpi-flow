@@ -1,81 +1,137 @@
 import gpio from 'rpi-gpio'
 import { READ } from './constants'
+import type { EDGE } from './constants'
+import {
+  litersFromCount,
+  normalizeCalibration,
+  type FlowCalibration,
+  type FlowCalibrationNormalized,
+} from './flowCalibration'
 
-type CalculateGpm = {
-  count: number,
-  pulseFrequency: number,
+export enum FlowGpioEdge {
+  Rising = 'rising',
+  Falling = 'falling',
+  Both = 'both',
 }
 
-type CancelToken = {
-  keepGoing: () => boolean,
-}
+type CancelToken = Readonly<{
+  keepGoing: () => boolean
+}>
 
-type CounterController = {
-  getCount: () => number,
-  resetCount: () => void,
-  startCounter: () => void,
-  stopCounter: () => void,
-}
+export type CounterController = Readonly<{
+  getCount: () => number
+  resetCount: () => void
+  startCounter: () => void
+  stopCounter: () => void
+}>
 
-type ReadFlow = {
-  cancelToken: CancelToken,
-  pulseFrequency: number,
-  controller: CounterController,
-  cycleFrequencyInMs: number
-}
+export type ReadFlow = Readonly<{
+  controller: CounterController
+  cycleFrequencyInMs?: number
+  calibration?: FlowCalibration
+  /** @deprecated Use `calibration` with `slope` (Hz per L/min). */
+  pulseFrequency?: number
+  cancelToken?: CancelToken
+}>
 
-type OnFlowReading = (gpm: number) => void
+type OnFlowReading = (litersInSample: number) => void | Promise<void>
 
-type ReadContinuousFlow = ReadFlow & {
-  onFlowReading: OnFlowReading
-}
+export type ReadContinuousFlow = Readonly<
+  ReadFlow & {
+    cancelToken: CancelToken
+    onFlowReading: OnFlowReading
+  }
+>
 
+export type SetupOptions = Readonly<{
+  gpioPin: number
+  /** GPIO edge to count; default rising (one transition per pulse). */
+  edge?: FlowGpioEdge
+}>
 
 const delay = (ms: number) => {
   return new Promise(r => setTimeout(r, ms))
 }
-  
-const readContinuous = async ({cancelToken, pulseFrequency, controller, onFlowReading, cycleFrequencyInMs=1000}:ReadContinuousFlow) => {
-  while(cancelToken.keepGoing()) {
-    const gpm = await readOne({cancelToken, pulseFrequency, controller, cycleFrequencyInMs})
-    await onFlowReading(gpm)
+
+const gpioEdgeFor = (edge: FlowGpioEdge | undefined): EDGE => {
+  if (edge === FlowGpioEdge.Falling) {
+    return gpio.EDGE_FALLING
+  }
+  if (edge === FlowGpioEdge.Both) {
+    return gpio.EDGE_BOTH
+  }
+  return gpio.EDGE_RISING
+}
+
+const readSampleLiters = (
+  controller: CounterController,
+  cycleFrequencyInMs: number,
+  normalized: FlowCalibrationNormalized
+) => {
+  controller.resetCount()
+  controller.startCounter()
+  return delay(cycleFrequencyInMs).then(() => {
+    controller.stopCounter()
+    const count = controller.getCount()
+    const liters = litersFromCount({
+      count,
+      cycleFrequencyInMs,
+      calibration: normalized,
+    })
+    controller.resetCount()
+    return liters
+  })
+}
+
+export const readContinuous = async (
+  args: ReadContinuousFlow
+): Promise<void> => {
+  const cycleFrequencyInMs = args.cycleFrequencyInMs ?? 1000
+  const normalized = normalizeCalibration({
+    calibration: args.calibration,
+    pulseFrequency: args.pulseFrequency,
+  })
+  while (args.cancelToken.keepGoing()) {
+    const liters = await readSampleLiters(
+      args.controller,
+      cycleFrequencyInMs,
+      normalized
+    )
+    await args.onFlowReading(liters)
   }
 }
 
-const readOne = async ({cancelToken, pulseFrequency, controller, cycleFrequencyInMs=1000}: ReadFlow) => {
-  controller.startCounter()
-  await delay(cycleFrequencyInMs)
-  controller.stopCounter()
-  const count = controller.getCount()
-  const litersPerMinute = count / pulseFrequency
-  const liters = litersPerMinute / 60
-  controller.resetCount()
-  return liters 
+export const readOne = async (args: ReadFlow): Promise<number> => {
+  const cycleFrequencyInMs = args.cycleFrequencyInMs ?? 1000
+  const normalized = normalizeCalibration({
+    calibration: args.calibration,
+    pulseFrequency: args.pulseFrequency,
+  })
+  if (args.cancelToken && args.cancelToken.keepGoing() === false) {
+    return 0
+  }
+  return readSampleLiters(args.controller, cycleFrequencyInMs, normalized)
 }
 
-const setup = ({
-  gpioPin,
-}: {gpioPin:number}) : CounterController => {
+export const setup = (options: SetupOptions): CounterController => {
   let count = 0
   let shouldCount = false
-  gpio.on('change', (channel, value) => {
+  gpio.on('change', (_channel, _value) => {
     if (shouldCount) {
       count += 1
     }
   })
-  gpio.setup(gpioPin, READ, gpio.EDGE_BOTH)
+  gpio.setup(options.gpioPin, READ, gpioEdgeFor(options.edge))
   return {
     getCount: () => count,
-    resetCount: () => count = 0,
-    startCounter: () => shouldCount = true,
-    stopCounter: () => shouldCount = true,
+    resetCount: () => {
+      count = 0
+    },
+    startCounter: () => {
+      shouldCount = true
+    },
+    stopCounter: () => {
+      shouldCount = false
+    },
   }
 }
-
-
-export {
-  setup,
-  readContinuous,
-  readOne,
-}
-
