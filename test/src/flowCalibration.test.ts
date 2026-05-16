@@ -88,6 +88,17 @@ describe('/src/flowCalibration.ts', () => {
       assert.isAtMost(Math.abs(actual - expected), 1e-9)
     })
 
+    it('should return zero when count is zero even if intercept is negative', () => {
+      const input = {
+        count: 0,
+        cycleFrequencyInMs: 1000,
+        calibration: { slope: 8.1, intercept: -5, edgesPerPulse: 1 as const },
+      }
+      const actual = litersFromCount(input)
+      const expected = 0
+      assert.equal(actual, expected)
+    })
+
     it('should clamp negative flow to zero', () => {
       const input = {
         count: 0,

@@ -71,6 +71,12 @@ export const litersFromCount = (args: LitersFromCountArgs): number => {
   if (seconds <= 0) {
     return 0
   }
+  // No edges in the window ⇒ measured pulse frequency is 0 Hz. A negative
+  // intercept in F = mQ + b is a frequency-axis offset; it must not invent
+  // flow when there were no pulses (see inverse Q = (F − b) / m at F = 0).
+  if (args.count === 0) {
+    return 0
+  }
   const hz = args.count / seconds / args.calibration.edgesPerPulse
   const litersPerMinute =
     (hz - args.calibration.intercept) / args.calibration.slope
